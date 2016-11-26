@@ -119,10 +119,23 @@ defaults
   errorfile 503 /etc/haproxy/errorfiles/503.http
   errorfile 504 /etc/haproxy/errorfiles/504.http
 
-listen cluster
+frontend cluster 
   bind *:<%= @http_bind_port %> mss 1422
   reqadd X-Forwarded-Proto:\ http
 
+  acl util_path path_beg /util
+  use_backend docker if util_path
+
+  default_backend app
+
+<% if Dir['/etc/nginx/ssl/*.pem'].reject {|filename| filename =~ /dhparam/}.count > 0 %>
+  listen clusterssl
+  bind *:443 mss 1422 ssl <%= Dir['/etc/nginx/ssl/*.pem'].reject {|filename| filename =~ /dhparam/}.collect {|pem| "crt #{pem}"}.join(" ") %>
+  reqadd X-Forwarded-Proto:\ https
+<% end %>
+
+
+backend app
   <% if @backends.any? %>
     <% @backends.each_with_index do |instance, i| %>
   server app-<%= i %> <%= instance['private_hostname'] %>:8081 check inter 5000 fastinter 1000 fall 1 weight <%= (instance['role'] == 'app_master') ? @app_master_weight : 50 %> # <%= instance['id'] %>
@@ -132,23 +145,12 @@ listen cluster
     server solo 127.0.0.1:8081 check inter 5000 fastinter 1000 fall 1 weight 50
   <% end %>
 
-<% if Dir['/etc/nginx/ssl/*.pem'].reject {|filename| filename =~ /dhparam/}.count > 0 %>
-    listen clusterssl
-    bind *:443 mss 1422 ssl <%= Dir['/etc/nginx/ssl/*.pem'].reject {|filename| filename =~ /dhparam/}.collect {|pem| "crt #{pem}"}.join(" ") %>
-    reqadd X-Forwarded-Proto:\ https
-
-    <% if @backends.any? %>
-    <% @backends.each_with_index do |instance, i| %>
-      server app-<%= i %> <%= instance['private_hostname'] %>:8081 check inter 5000 fastinter 1000 fall 1 weight <%= (instance['role'] == 'app_master') ? @app_master_weight : 50 %> # <%= instance['id'] %>
-    <% end %>
-    <% else %>
-        # It must be a solo.
-        server solo 127.0.0.1:8081 check inter 5000 fastinter 1000 fall 1 weight 50
-      <% end %>
-<% else %>
-
+backend docker
+<% if @dockers.any? %>
+  <% @dockers.each_with_index do |instance, i| %>
+  server docker-<%= i %> <%= instance['private_hostname'] %>:8081 check inter 5000 fastinter 1000 fall 1 weight 50 # <%= instance['id'] %>
+  <% end %>
 <% end %>
-# TODO: ELB configuration
 
 listen lbtoworkers
   bind *:8080
