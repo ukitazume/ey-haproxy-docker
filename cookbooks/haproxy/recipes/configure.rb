@@ -50,6 +50,7 @@ unless haproxy_httpchk_path
   end
 end
 
+
 managed_template "/etc/haproxy.cfg" do
   owner 'root'
   group 'root'
@@ -58,6 +59,7 @@ managed_template "/etc/haproxy.cfg" do
   members = node.dna[:members] || []
   variables({
     :backends => node.engineyard.environment.app_servers,
+    :dockers => node['dna']['engineyard']['environment']['instances'].select{ |i| i['role'] == 'util' && i['name'] =~ /docker/ },
     :app_master_weight => members.size < 51 ? (50 - (members.size - 1)) : 0,
     :haproxy_user => node.dna[:haproxy][:username],
     :haproxy_pass => node.dna[:haproxy][:password],
@@ -69,5 +71,6 @@ managed_template "/etc/haproxy.cfg" do
 
   # We need to reload to activate any changes to the config
   # but delay it as haproxy may not be installed yet
-  notifies :run, resources(:execute => 'reload-haproxy'), :delayed
+  # end
+ notifies :run, resources(:execute => 'reload-haproxy'), :delayed
 end
